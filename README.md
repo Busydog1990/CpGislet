@@ -2,6 +2,10 @@ remote::install_github("Busydog1990/CpGislet")
 
 require(CpGislet)
 
+You can see workflow of CpGislet in Busydog1990/CpGislet_workflow
+
+If you have any question, contact zzhe@mail.hzau.edu.cn
+
 
 Package: CpGislet
 
