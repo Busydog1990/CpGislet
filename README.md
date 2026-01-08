@@ -18,7 +18,7 @@ Version: 0.1.7
 Author: person(given = 'Zhe', family = 'Zhang', email = 'zzhe@jhun.edu.cn', 
                role = 'aut', comment = c(ORCID = '0000-0001-5265-6069'))
                
-Maintainer: Zhang, Zhe <mail@jhun.edu.cn>
+Maintainer: Zhang, Zhe <zzhe@jhun.edu.cn>
 
 Description: A tool for predicting CpG islet structure in the genome. Also including annotation, classification, and statistics of CpG islet.
 
