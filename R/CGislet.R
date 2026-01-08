@@ -352,6 +352,345 @@ get_GC_content <- function(sequence){
   return(ratio)
 }
 
+#' Batch Calculation of CpGislet p-values (Improved Bayesian Posterior Probability Computation)
+#'
+#' @param candidate_seqs DNAStringSet object containing candidate CpGislet sequences
+#' @param random_seqs DNAStringSet object containing genomic background sequences
+#' @param prior_strength Prior strength parameter controlling the influence of prior distribution (default: 0.5)
+#' @param prior_odds Prior odds ratio, P(H1)/P(H0), representing the prior belief in alternative hypothesis (default: 0.5, indicating prior favors H0)
+#' @param seed Random seed for reproducibility
+#' @param verbose Logical flag controlling detailed output display
+#' @return A list containing: 
+#' 1) results dataframe with statistical metrics for each candidate sequence, 
+#' 2) feature matrices for candidate and background sequences, 
+#' 3) Bayesian parameters, and 
+#' 4) summary statistics
+#'
+#' @description
+#' This function implements an improved Bayesian approach for identifying CpG islands from candidate DNA sequences.
+#' The method computes traditional frequentist p-values based on Mahalanobis distance while providing enhanced
+#' Bayesian posterior probability estimates using Zellner's g-prior approach. The algorithm extracts four genomic
+#' features (CpG O/E ratio, CpA/TpG O/E ratio, GC content, and CpG density) from both candidate and background
+#' sequences, models the null distribution using multivariate normal approximation, and calculates Bayes factors
+#' to estimate the posterior probability that each candidate sequence represents a true CpG island (H1).
+#' Empirical calibration ensures consistency between frequentist and Bayesian results.
+#'
+#' @examples
+#' \dontrun{
+#' # Load necessary libraries
+#' library(Biostrings)
+#'
+#' # Generate example sequences
+#' candidate_seqs <- DNAStringSet(c("ACGTACGT", "CGTCGTCG", "ATATATAT"))
+#' random_seqs <- DNAStringSet(rep(c("ACGTACGT", "CGTCGTCG", "ATATATAT"), 10))
+#'
+#' # Run analysis
+#' result <- calculate_pvalues_bayesian_batch_v3(
+#' candidate_seqs = candidate_seqs,
+#' random_seqs = random_seqs,
+#' prior_strength = 0.5,
+#' prior_odds = 0.5,
+#' seed = 123,
+#' verbose = TRUE
+#' )
+#'
+#' # View results
+#' head(result$results)
+#' }
+#'
+#' @references
+#' Zellner, A. (1986). On assessing prior distributions and Bayesian regression analysis with g-prior distributions.
+#' In Bayesian inference and decision techniques: Essays in Honor of Bruno de Finetti (pp. 233-243).
+#'
+#' Benjamin, Y., & Hochberg, Y. (1995). Controlling the false discovery rate: a practical and powerful approach
+#' to multiple testing. Journal of the Royal Statistical Society: Series B (Methodological), 57(1), 289-300.
+#'
+#' @export
+calculate_pvalues_bayesian_batch <- function(candidate_seqs, random_seqs,
+                                             prior_strength = 0.5,
+                                             prior_odds = 0.5,
+                                             seed = 1234,
+                                             verbose = TRUE) {
+    
+    # Check input object format
+    if (!inherits(candidate_seqs, "DNAStringSet")) {
+        stop("candidate_seqs must be a DNAStringSet object")
+    }
+    if (!inherits(random_seqs, "DNAStringSet")) {
+        stop("random_seqs must be a DNAStringSet object")
+    }
+    
+    set.seed(seed)
+    
+    n_candidates <- length(candidate_seqs)
+    
+    if (verbose) {
+        cat("=== Calculation of CpGislet pvalue ===\n")
+        cat("Number of candidate sequences:", n_candidates, "\n")
+        cat("Number of random sequences:", length(random_seqs), "\n")
+        cat("Prior strength:", prior_strength, "\n")
+        cat("Prior probability ratio:", prior_odds, "\n")
+    }
+    
+    # Calculation of eigenvalue
+    calculate_features_vectorized <- function(dna_string_set) {
+        n_seqs <- length(dna_string_set)
+        features <- matrix(NA, nrow = n_seqs, ncol = 4)
+        colnames(features) <- c("CpG_OE", "CpA_TpG_OE", "GC_content", "CG_density")
+        
+        for (i in 1:n_seqs) {
+            seq <- as.character(dna_string_set[i])
+            seq_no_n <- gsub("N", "", seq)
+            
+            if (nchar(seq_no_n) == 0) {
+                features[i, ] <- rep(NA, 4)
+                next
+            }
+            
+            counts <- list(
+                A = stringr::str_count(seq_no_n, "A"),
+                C = stringr::str_count(seq_no_n, "C"),
+                G = stringr::str_count(seq_no_n, "G"),
+                T = stringr::str_count(seq_no_n, "T"),
+                CG = stringr::str_count(seq_no_n, "CG"),
+                CA = stringr::str_count(seq_no_n, "CA"),
+                TG = stringr::str_count(seq_no_n, "TG")
+            )
+            
+            L <- nchar(seq_no_n)
+            
+            # GC content
+            GC_content <- (counts$C + counts$G) / L * 100
+            
+            # CpG O/E ratio
+            if (counts$C > 0 && counts$G > 0) {
+                CpG_OE <- (counts$CG * L) / (counts$C * counts$G)
+            } else {
+                CpG_OE <- 0
+            }
+            
+            # CpG density
+            CG_density <- counts$CG / L * 100
+            
+            # CpA|TpG O/E ratio
+            denominator <- (counts$C * counts$A + counts$T * counts$G)
+            if (denominator > 0) {
+                CpA_TpG_OE <- ((counts$CA + counts$TG) * L) / denominator
+            } else {
+                CpA_TpG_OE <- 0
+            }
+            
+            features[i, ] <- c(CpG_OE, CpA_TpG_OE, GC_content, CG_density)
+        }
+        
+        return(features)
+    }
+    
+
+    if (verbose) cat("Calculation of eigenvalue...\n")
+    obs_features <- calculate_features_vectorized(candidate_seqs)
+    random_features <- calculate_features_vectorized(random_seqs)
+    
+    na_rows <- rowSums(is.na(random_features)) > 0
+    if (any(na_rows)) {
+        random_features <- random_features[!na_rows, ]
+    }
+    
+    if (verbose) {
+        cat("Random sequence eigenvalue dimension:", dim(random_features), "\n")
+    }
+    
+    # Calculate the mean and covariance of a random sequence
+    random_mean <- colMeans(random_features)
+    random_cov <- cov(random_features)
+    
+    # Calculate the posterior probability of each candidate sequence
+    n_candidates <- nrow(obs_features)
+    results <- data.frame(
+        seq_id = 1:n_candidates,
+        seq_length = width(candidate_seqs),
+        CpG_OE = obs_features[, "CpG_OE"],
+        CpA_TpG_OE = obs_features[, "CpA_TpG_OE"],
+        GC_content = obs_features[, "GC_content"],
+        CG_density = obs_features[, "CG_density"],
+        bayesian_pvalue = rep(NA, n_candidates),
+        posterior_prob_h1 = rep(0, n_candidates),
+        log_bf = rep(NA, n_candidates),
+        mahalanobis_dist = rep(NA, n_candidates),
+        stringsAsFactors = FALSE
+    )
+    
+    # Calculate the statistical measures for each candidate sequence
+    if (verbose) cat("Calculate the statistical measures for each candidate sequence...\n")
+    
+    for (i in 1:n_candidates) {
+        if (verbose && n_candidates > 100 && i %% 100 == 0) {
+            cat(paste("  Processing the", i, "/", n_candidates, "candidate sequence\n"))
+        }
+        
+        obs_feature <- obs_features[i, ]
+
+        if (any(is.na(obs_feature))) {
+            next
+        }
+        
+        # Calculate Mahalanobis distance
+        diff <- obs_feature - random_mean
+        mahalanobis_dist <- sqrt(t(diff) %*% solve(random_cov) %*% diff)
+        results$mahalanobis_dist[i] <- mahalanobis_dist
+        
+        # Calculate p-value (based on chi square distribution)
+        results$bayesian_pvalue[i] <- pchisq(mahalanobis_dist^2, df = 4, lower.tail = FALSE)
+        
+        # Posterior probability calculation
+        
+        # Bayesian factor based on Mahalanobis distance and prior
+        D2 <- mahalanobis_dist^2
+        
+        # Calculate likelihood ratio (H1 relative to H0)
+        # H0~N(μ_random, Σ_random)
+        # H1~N(μ_candidate, Σ_random),μ_candidate ≠ μ_random
+        
+        # For a single observation, the maximum likelihood at H1 is at the observation value
+        # The likelihood ratio is: L (H1)/L (H0)=exp (0.5 * D2)
+        # Use BIC correction
+        n_params_h1 <- 4  # 
+        n_obs <- 1 
+        
+        # Bayesian factor approximation (using BIC approximation)
+        # BF ≈ exp(0.5 * (BIC_H0 - BIC_H1))
+        # BIC = -2 * log(likelihood) + k * log(n)
+        log_lik_h0 <- dmvnorm(obs_feature, mean = random_mean, sigma = random_cov, log = TRUE)
+        log_lik_h1 <- 0  # Maximizing the likelihood at the observed value to a constant (standardized)
+        
+        # Use an alternative distribution
+        # H1~N(random_mean, τ^2 * Σ_random)
+        # Where, the prior of the effect size controlled by τ
+        
+        # Simplified Bayesian Factor Calculation
+        # Using Zellner's g-prior concept
+        # BF = (1 + g)^{(-k/2)} * exp( g/(1+g) * D2/2 )
+        # Where g is the prior variance ratio parameter
+        
+        # Bayesian empirical adjustment
+        # g = prior_strength * (n_random / n_candidates)
+        n_random <- nrow(random_features)
+        g <- prior_strength * (n_random / max(n_candidates, 100))
+        g <- min(max(g, 0.1), 10)        
+        k <- 4 
+        
+        # Calculate logarithmic Bayesian factor
+        log_bf <- (-k/2) * log(1 + g) + (g/(1 + g)) * (D2/2)
+        results$log_bf[i] <- log_bf
+        
+        # Calculate posterior probability
+        # P(H1|data) = (BF * prior_odds) / (1 + BF * prior_odds)
+        bf <- exp(log_bf)
+        posterior_odds <- bf * prior_odds
+        posterior_prob_h1 <- posterior_odds / (1 + posterior_odds)
+
+        pval <- results$bayesian_pvalue[i]
+        posterior_prob_h1[is.na(posterior_prob_h1)] <- 0
+        if (posterior_prob_h1 < 0.1 && pval < 0.05) {
+            adjusted_prob <- 1 / (1 + exp(5 * pval - 2))
+            posterior_prob_h1 <- max(posterior_prob_h1, adjusted_prob)
+        }
+        
+        results$posterior_prob_h1[i] <- posterior_prob_h1
+    }
+    
+    # Explain Bayesian factors
+    interpret_bf <- function(log_bf) {
+        bf <- exp(log_bf)
+        if (is.na(bf)) return(NA)
+        if (bf < 1/3) return("H0")
+        else if (bf < 1) return("Weak support for H0")
+        else if (bf < 3) return("Weak support for H1")
+        else if (bf < 10) return("Medium support for H0")
+        else if (bf >= 10) return("Strong support for H1")
+    }
+    
+    results$bf_interpretation <- sapply(results$log_bf, interpret_bf)
+    
+    # Add significance markers (based on original p-value and posterior probability)
+    results$significant_pvalue <- results$bayesian_pvalue < 0.05
+    results$significant_prob <- results$posterior_prob_h1 > 0.5  # 
+    
+    n_sig_prob <- sum(results$significant_prob, na.rm = TRUE)
+    n_sig_pval <- sum(results$significant_pvalue, na.rm = TRUE)
+    
+    # Dynamically adjust the threshold to match the number of p-value filters
+    if (n_sig_prob < n_sig_pval * 0.5) {
+        prob_threshold <- quantile(results$posterior_prob_h1, 
+                                   probs = 1 - (n_sig_pval/n_candidates), 
+                                   na.rm = TRUE)
+        prob_threshold <- min(max(prob_threshold, 0.1), 0.9)
+        results$significant_prob_adjusted <- results$posterior_prob_h1 > prob_threshold
+    } else {
+        results$significant_prob_adjusted <- results$significant_prob
+    }
+    
+    # Calculate FDR
+    results$bayesian_pvalue_adj <- p.adjust(results$bayesian_pvalue, method = "BH")
+    
+    # Count the number of significant sequences
+    n_sig_pval <- sum(results$significant_pvalue, na.rm = TRUE)
+	n_sig_pval_adjust <- sum(results$bayesian_pvalue_adj, na.rm = TRUE)
+    n_sig_prob <- sum(results$significant_prob, na.rm = TRUE)
+	
+    if (verbose) {
+        cat("\n=== Result Summary ===\n")
+        cat("Number of candidates:", n_candidates, "\n")
+        cat("Number of Significant candidates (p < 0.05):", n_sig_pval, "(", 
+            round(n_sig_pval/n_candidates*100, 1), "%)\n")
+		cat("Number of Significant candidates (p.adjust < 0.05):", n_sig_pval, "(", 
+            round(n_sig_pval/n_candidates*100, 1), "%)\n")
+        cat("Number of Significant candidates (posterior > 0.5):", n_sig_prob, "(", 
+            round(n_sig_prob/n_candidates*100, 1), "%)\n")
+        results$log_bf
+        cat("\nBayesian factor distribution:\n")
+        bf_summary <- summary(exp(results$log_bf))
+        print(bf_summary)
+        
+        cat("\nPosterior probability distribution:\n")
+        prob_summary <- summary(results$posterior_prob_h1)
+        print(prob_summary)
+        
+        cat("\nCorrelation Analysis:\n")
+        cor_test <- cor.test(results$bayesian_pvalue, results$posterior_prob_h1, na.rm = TRUE)
+        if (cor_test$p.value > 2.2e-16){
+		cat("Pearson correlation coefficient between p-value and posterior probability:", 
+            round(cor_test$estimate, 3), " (p =", 
+            cor_test$p.value, ")\n")}
+		else {
+		
+		}
+    }
+    
+    # Return results
+    return(list(
+        results = results,
+        obs_features = obs_features,
+        random_features = random_features,
+        bayesian_params = list(
+            prior_strength = prior_strength,
+            prior_odds = prior_odds,
+            random_mean = random_mean,
+            random_cov = random_cov,
+            n_random = nrow(random_features)
+        ),
+        summary = list(
+            n_candidates = n_candidates,
+            n_sig_pval = n_sig_pval,
+            n_sig_prob = n_sig_prob,
+            n_sig_prob_adj = n_sig_prob_adj,
+            posterior_prob_summary = summary(results$posterior_prob_h1),
+            pvalue_summary = summary(results$bayesian_pvalue)
+        )
+    ))
+}
+
+
 
 #' Filter CG islet candidates with pvalue
 #' @param CGislet GRange object of CpG islets
@@ -364,7 +703,7 @@ get_GC_content <- function(sequence){
 #' @return List includes filtered CpG islets range and CpG sites range
 #' @export
 
-CGislet_filter <- function(CGislet_object,genome,breaks = 10000,random_seq_num = 100000,
+CGislet_filter <- function(CGislet_object,BSgenome,genome,random_seq_rate = 0.0001,
                            CG_var = c("CpG_OE","CpA_TpG_OE","GC_content","CG_density"),
                            pvalueCutoff = 0.05,qvalueCutoff = 0.2){
 
@@ -373,46 +712,18 @@ CGislet_filter <- function(CGislet_object,genome,breaks = 10000,random_seq_num =
 
   CG_stat <- CGislet_object$CG_stat
 
-  CGislet_seq <- CGislet_object$CpGislet_seq
+  CGislet_seq <- getSeq(BSgenome,CGislet_object$CpGislet)
 
   # CG_flank_seq <- CGislet_object$CG_flank_seq
 
-  random_seq <- do.call(c,lapply(1:length(genome),function(x)get_random_seqs(genome[x],
-                                                             random_seq_num = random_seq_num)))
+  chrom_lengths <- seqlengths(BSgenome)
+  
+  randomseq <- do.call(c,lapply(1:length(chrom_lengths),
+                              function(x)get_random_seqs(hg38_genome[x],random_seq_min = 200,
+                                                         random_seq_max = 1000,
+                                                         random_seq_num = round(chrom_lengths[x] * random_seq_rate))))
 
-  random_seq_stat <- data.frame(CpG_OE = get_CpG_OE_ratio(random_seq),
-                                CpA_TpG_OE = get_CpA_TpG_OE_ratio(random_seq),
-                                GC_content = get_GC_content(random_seq),
-                                CG_density = vcountPattern("CG",random_seq) / width(random_seq))
-
-  random_seq_quantile <- lapply(random_seq_stat,function(x)data.frame(quantile = quantile(x,seq(0,1,length = breaks)),num = 1:breaks))
-
-  random_seq_quantile <- lapply(random_seq_quantile,function(x)x[!duplicated(x$quantile),])
-
-  CGislet_stat <- mcols(CGislet)[,CG_var]
-
-  CGislet_stat_result <- matrix(0,nrow(CGislet_stat),length(CG_var))
-
-  for (i in 1:length(CG_var)){
-
-    CGislet_quantile <- cut(CGislet_stat[,i],c(min(random_seq_quantile[[i]]$quantile)-1,
-                                               random_seq_quantile[[i]]$quantile,
-                                               max(random_seq_quantile[[i]]$quantile)+1))
-    levels(CGislet_quantile) <- c(0,random_seq_quantile[[i]]$num,breaks)
-
-    CGislet_stat_result[,i] <- 1 - (as.numeric(as.character(CGislet_quantile)) / breaks)
-
-  }
-
-  colnames(CGislet_stat_result) <- paste0(CG_var,"_p")
-
-
-  if ("CpA_TpG_OE" %in% CG_var){
-    CGislet_stat_result[,"CpA_TpG_OE_p"] <- 1 - CGislet_stat_result[,"CpA_TpG_OE_p"]
-  }
-
-  mcols(CGislet) <- cbind(mcols(CGislet),CGislet_stat_result)
-
+  
   CGislet$CGislet_pvalue <- exp(rowSums(log(CGislet_stat_result + (1/breaks))))
 
   CGislet$CGislet_pvalue[is.na(CGislet$CGislet_pvalue)] <- 1
