@@ -4,7 +4,7 @@ require(CpGislet)
 
 You can see workflow of CpGislet in Busydog1990/CpGislet_workflow
 
-If you have any question, contact zzhe@mail.hzau.edu.cn
+If you have any question, contact zzhe@jhun.edu.cn
 
 
 Package: CpGislet
@@ -15,10 +15,10 @@ Title: Detective of CpG islets in the genome and predict their structures
 
 Version: 0.1.7
 
-Author: person(given = 'Zhe', family = 'Zhang', email = 'zzhe@mail.hzau.edu.cn', 
+Author: person(given = 'Zhe', family = 'Zhang', email = 'zzhe@jhun.edu.cn', 
                role = 'aut', comment = c(ORCID = '0000-0001-5265-6069'))
                
-Maintainer: Zhang, Zhe <mail@mail.hzau.edu.cn>
+Maintainer: Zhang, Zhe <mail@jhun.edu.cn>
 
 Description: A tool for predicting CpG islet structure in the genome. Also including annotation, classification, and statistics of CpG islet.
 
