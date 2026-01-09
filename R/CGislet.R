@@ -683,7 +683,7 @@ calculate_pvalues_bayesian_batch <- function(candidate_seqs, random_seqs,
             n_candidates = n_candidates,
             n_sig_pval = n_sig_pval,
             n_sig_prob = n_sig_prob,
-            n_sig_prob_adj = n_sig_prob_adj,
+            n_sig_pval_adj = n_sig_pval_adjust,
             posterior_prob_summary = summary(results$posterior_prob_h1),
             pvalue_summary = summary(results$bayesian_pvalue)
         )
@@ -1656,3 +1656,4 @@ get_pvalue <- function(dat,bootstrap = 100L,permutation = 1000L,vars = "CpG_OE",
   return(pvalue)
 
 }
+
