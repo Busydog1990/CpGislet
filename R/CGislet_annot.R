@@ -15,37 +15,37 @@ CGislet_gene_annot <- function(CGislet,annot_file,genome,annotDb = NULL,
   
   suppressWarnings(annot_chrominfo <- data.frame(seqinfo(my_txdb)))
   
-  seq_name <- levels(seqnames(CGislet$CGislet))
+  seq_name <- levels(seqnames(CGislet$CpGislet))
   
   if (any(grepl("^chr|^Chr",rownames(annot_chrominfo)))){
     if (!any(grepl("^chr|^Chr",seq_name))){
-      seqlevels(CGislet$CGislet) <- paste0(substr(rownames(annot_chrominfo)[1],1,3),seq_name)
+      seqlevels(CGislet$CpGislet) <- paste0(substr(rownames(annot_chrominfo)[1],1,3),seq_name)
     }
   } else {
     if (any(grepl("^chr|^Chr",seq_name))){
-      seqlevels(CGislet$CGislet) <- gsub("^M$","MT",gsub("^chr|Chr","",seq_name))
+      seqlevels(CGislet$CpGislet) <- gsub("^M$","MT",gsub("^chr|Chr","",seq_name))
     }
   }
   
-  if (!all(seqlevels(CGislet$CGislet) %in% rownames(annot_chrominfo))){
+  if (!all(seqlevels(CGislet$CpGislet) %in% rownames(annot_chrominfo))){
     stop("\nSeqnames of genome and annot file do not match")
   }
   
   if (is.null(annotDb)){
-    islet_Anno <- ChIPseeker::annotatePeak(CGislet$CGislet, tssRegion=tssRegion, TxDb=my_txdb)
-    CGislet$CGislet <- islet_Anno@anno
+    islet_Anno <- ChIPseeker::annotatePeak(CGislet$CpGislet, tssRegion=tssRegion, TxDb=my_txdb)
+    CGislet$CpGislet <- islet_Anno@anno
     if (annot_type == "gff3" & grepl("gff",gsub(".*/","",annot_file))){
       my_annot <- annot_from_gff3(CGislet,gff3 = annot_file)
-      CGislet$CGislet$SYMBOL <- my_annot[CGislet$CGislet$geneId,"SYMBOL"]
+      CGislet$CpGislet$SYMBOL <- my_annot[CGislet$CpGislet$geneId,"SYMBOL"]
     }
   } else {
-    islet_Anno <- ChIPseeker::annotatePeak(CGislet$CGislet, tssRegion=tssRegion,
+    islet_Anno <- ChIPseeker::annotatePeak(CGislet$CpGislet, tssRegion=tssRegion,
                                            TxDb=my_txdb, annoDb = annotDb)
-    CGislet$CGislet <- islet_Anno@anno
+    CGislet$CpGislet <- islet_Anno@anno
   }
   CGislet$gene_annot <- islet_Anno
   
-  seqlevels(CGislet$CGislet) <- seq_name
+  seqlevels(CGislet$CpGislet) <- seq_name
   return(CGislet)
   
 }
@@ -92,19 +92,19 @@ annot_from_gff3 <- function(CGislet,gff3,symbol_pattern = "Name=",
     my_gff3 <- gff3
   }
 
-  seq_name <- levels(seqnames(CGislet$CGislet))
+  seq_name <- levels(seqnames(CGislet$CpGislet))
 
   if (any(grepl("^chr|^Chr",my_gff3$V1))){
     if (!any(grepl("^chr|^Chr",seq_name))){
-      seqlevels(CGislet$CGislet) <- paste0(substr(rownames(annot_chrominfo)[1],1,3),seq_name)
+      seqlevels(CGislet$CpGislet) <- paste0(substr(rownames(annot_chrominfo)[1],1,3),seq_name)
     }
   } else {
     if (any(grepl("^chr|^Chr",seq_name))){
-      seqlevels(CGislet$CGislet) <- gsub("^M$","MT",gsub("^chr|Chr","",seq_name))
+      seqlevels(CGislet$CpGislet) <- gsub("^M$","MT",gsub("^chr|Chr","",seq_name))
     }
   }
 
-  if (!all(seqlevels(CGislet$CGislet) %in% my_gff3$V1)){
+  if (!all(seqlevels(CGislet$CpGislet) %in% my_gff3$V1)){
     stop("\nSeqnames of genome and annot file do not match")
   }
 
