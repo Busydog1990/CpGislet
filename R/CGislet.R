@@ -474,6 +474,12 @@ calculate_pvalues_bayesian_batch <- function(candidate_seqs, random_seqs,
             
             # CpA|TpG O/E ratio
             denominator <- (counts$C * counts$A + counts$T * counts$G)
+			if (is.null(denominator)){
+				denominator <- 0
+			}
+			if (!is.finite(denominator)){
+				denominator <- 0
+			}
             if (denominator > 0) {
                 CpA_TpG_OE <- ((counts$CA + counts$TG) * L) / denominator
             } else {
@@ -1656,4 +1662,5 @@ get_pvalue <- function(dat,bootstrap = 100L,permutation = 1000L,vars = "CpG_OE",
   return(pvalue)
 
 }
+
 
