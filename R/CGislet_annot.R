@@ -8,7 +8,7 @@
 #' @return CGislet with CGislet_type
 #' @export
 
-CGislet_gene_annot <- function(CGislet,annot_file,genome,annotDb = NULL,
+CGislet_gene_annot <- function(CGislet,TxDb = NULL,annot_file = NULL,genome,annotDb = NULL,
                                annot_type = "gff3",tssRegion = c(-2500,500)){
   
   if (is.null(TxDb)){
@@ -337,4 +337,5 @@ tsDMR_annot <- function(CG_islet,tsDMR){
   return(tsDMR_annot)
 
 }
+
 
