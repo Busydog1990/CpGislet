@@ -11,8 +11,11 @@
 CGislet_gene_annot <- function(CGislet,annot_file,genome,annotDb = NULL,
                                annot_type = "gff3",tssRegion = c(-2500,500)){
   
-  my_txdb <- txdbmaker::makeTxDbFromGFF(annot_file)
-  
+  if (is.null(TxDb)){
+	  my_txdb <- txdbmaker::makeTxDbFromGFF(annot_file)
+  } else {
+	  my_txdb = TxDb
+  }
   suppressWarnings(annot_chrominfo <- data.frame(seqinfo(my_txdb)))
   
   seq_name <- levels(seqnames(CGislet$CpGislet))
@@ -334,3 +337,4 @@ tsDMR_annot <- function(CG_islet,tsDMR){
   return(tsDMR_annot)
 
 }
+
